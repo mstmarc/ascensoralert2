@@ -2,6 +2,7 @@ from flask import Flask, request, render_template_string, redirect, session
 import requests
 import os
 from werkzeug.security import check_password_hash
+import urllib.parse
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY")
@@ -28,7 +29,8 @@ def login():
         contrasena = request.form.get("contrasena")
         if not usuario or not contrasena:
             return render_template_string(LOGIN_TEMPLATE, error="Usuario y contraseña requeridos")
-        query = f"?nombre_usuario=eq.{usuario}"
+        encoded_user = urllib.parse.quote(usuario, safe="")
+        query = f"?nombre_usuario=eq.{encoded_user}"
         response = requests.get(f"{SUPABASE_URL}/rest/v1/usuarios{query}", headers=HEADERS)
 
         if response.status_code == 200 and len(response.json()) == 1:
