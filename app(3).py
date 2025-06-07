@@ -1,33 +1,42 @@
 from flask import Flask, request, render_template_string, redirect, session
 import requests
+import os
+from werkzeug.security import check_password_hash
 
 app = Flask(__name__)
-app.secret_key = "supersecreto"
+app.secret_key = os.environ.get("SECRET_KEY")
+if not app.secret_key:
+    raise RuntimeError("SECRET_KEY environment variable is not set")
 
 # 🔗 Datos de Supabase
 SUPABASE_URL = "https://zdbwnxnikspdexfpuhad.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpkYndueG5pa3NwZGV4ZnB1aGFkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg0NDEwMDcsImV4cCI6MjA2NDAxNzAwN30.dFbPGxzN3TJMKdgr7sSIJbJWt8ylRUG3mn1wXAAhBcE"
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+
+if not SUPABASE_KEY:
+    raise RuntimeError("SUPABASE_KEY environment variable is not set")
 HEADERS = {
     "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
     "Content-Type": "application/json",
     "Prefer": "return=representation"
 }
-
 # 🟢 Login
 @app.route("/", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
         usuario = request.form.get("usuario")
         contrasena = request.form.get("contrasena")
-        query = f"?nombre_usuario=eq.{usuario}&contrasena=eq.{contrasena}"
+        if not usuario or not contrasena:
+            return render_template_string(LOGIN_TEMPLATE, error="Usuario y contraseña requeridos")
+        query = f"?nombre_usuario=eq.{usuario}"
         response = requests.get(f"{SUPABASE_URL}/rest/v1/usuarios{query}", headers=HEADERS)
 
         if response.status_code == 200 and len(response.json()) == 1:
-            session["usuario"] = usuario
-            return redirect("/home")
-        else:
-            return render_template_string(LOGIN_TEMPLATE, error="Usuario o contraseña incorrectos")
+            user = response.json()[0]
+            if check_password_hash(user.get("contrasena", ""), contrasena):
+                session["usuario"] = usuario
+                return redirect("/home")
+        return render_template_string(LOGIN_TEMPLATE, error="Usuario o contraseña incorrectos")
     return render_template_string(LOGIN_TEMPLATE, error=None)
 
 @app.route("/logout")
@@ -60,6 +69,10 @@ def formulario_lead():
             "email": request.form.get("email"),
             "observaciones": request.form.get("observaciones")
         }
+
+        required = [data["tipo_cliente"], data["direccion"], data["nombre_cliente"], data["localidad"]]
+        if any(not field for field in required):
+            return "Datos del lead inválidos", 400
 
         response = requests.post(f"{SUPABASE_URL}/rest/v1/clientes?select=id", json=data, headers=HEADERS)
         if response.status_code in [200, 201]:
@@ -94,6 +107,10 @@ def nuevo_equipo():
             "rae": request.form.get("rae"),
             "ipo_proxima": request.form.get("ipo_proxima")
         }
+
+        required = [equipo_data["cliente_id"], equipo_data["tipo_equipo"]]
+        if any(not field for field in required):
+            return "Datos del equipo inválidos", 400
 
         res = requests.post(f"{SUPABASE_URL}/rest/v1/equipos", json=equipo_data, headers=HEADERS)
         if res.status_code in [200, 201]:
@@ -555,4 +572,5 @@ DASHBOARD_TEMPLATE = """
 """
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    debug = os.environ.get("FLASK_DEBUG") == "1"
+    app.run(debug=debug)
